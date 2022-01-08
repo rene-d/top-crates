@@ -1,0 +1,44 @@
+exclusions = []
+
+additions = [
+    # Crates that the compiler recommends
+    # rg 'https://crates.io/crates/[a-z_-]+' --glob '*.stderr' --only-matching --no-line-number --no-filename | sort | uniq | cut -d '/' -f 5
+    "async-trait",
+    "async-recursion",
+
+    "flatbuffers",
+    "protobuf",
+    "scan_fmt",
+    "permutator",
+    "text_io",
+    "md5",
+    "indicatif",
+    "permutator",
+    "structopt",
+    "structopt-derive",
+
+#    "panamax",
+#    "lsd",
+#    "ripgrep",
+#    "procs",
+#    "dua-cli",
+#    "bottom",
+#    "dust",
+#    "cross",
+    "tui",
+#    "cargo-edit",
+#    "cargo",
+
+    "futures-util",
+    "futures-task",
+    "futures-channel",
+    "futures-sink",
+    "mime",
+    "futures-io",
+    "uuid",
+    "walkdir",
+    "futures-macro",
+    "hex",
+    "tokio-util",
+    "futures-executor"
+]

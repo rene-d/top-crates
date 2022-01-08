@@ -1,0 +1,6 @@
+[submodule "crates.io-index"]
+	path = crates.io-index
+	url = ./crates.io-index
+[submodule "crates.io-index-top100"]
+	path = crates.io-index-top100
+	url = ./crates.io-index-top100
