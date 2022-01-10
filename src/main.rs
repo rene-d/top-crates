@@ -2,12 +2,7 @@
 
 use rust_playground_top_crates::*;
 use serde::Serialize;
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::Read,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, fs::File, io::Read, path::PathBuf};
 
 /// A Cargo.toml file.
 #[derive(Serialize)]
@@ -53,14 +48,10 @@ fn main() {
     let modifications: Modifications =
         toml::from_slice(&d).expect("unable to parse crate modifications file");
 
-
-    let (_dependencies, infos) = rust_playground_top_crates::generate_info(&modifications);
-
-
+    let infos = rust_playground_top_crates::generate_info(&modifications);
 
     // Write manifest file.
     let base_directory: PathBuf = PathBuf::from(".");
-
 
     let path = base_directory.join("crate-information.json");
     let mut f = File::create(&path)

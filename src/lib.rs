@@ -7,15 +7,16 @@ use cargo::{
         registry::PackageRegistry,
         resolver::{self, features::RequestedFeatures, ResolveOpts},
         source::SourceMap,
-        Dependency, Package, Source, SourceId, TargetKind,
+        Dependency, Source, SourceId, TargetKind,
     },
     sources::RegistrySource,
     util::{Config, VersionExt},
 };
+use globset::{Glob, GlobMatcher};
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeSet, HashSet},
     io::Read,
 };
 
@@ -42,13 +43,36 @@ pub struct CrateInformation {
     pub id: String,
 }
 
+#[derive(Debug, Default)]
+pub struct Exclusions {
+    pub globs: Vec<GlobMatcher>,
+}
+
 /// Hand-curated changes to the crate list
 #[derive(Debug, Default, Deserialize)]
 pub struct Modifications {
     #[serde(default)]
-    pub exclusions: Vec<String>,
+    pub exclusions: Exclusions,
     #[serde(default)]
     pub additions: BTreeSet<String>,
+}
+
+impl<'de> Deserialize<'de> for Exclusions {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let json: serde_json::value::Value = serde_json::value::Value::deserialize(deserializer)?;
+        let patterns = serde_json::from_value::<Vec<String>>(json).unwrap();
+
+        let mut excl = Exclusions::default();
+        for pattern in patterns {
+            let glob = Glob::new(pattern.as_str()).unwrap().compile_matcher();
+            excl.globs.push(glob);
+        }
+
+        Ok(excl)
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -77,7 +101,7 @@ fn is_true(b: &bool) -> bool {
 
 impl Modifications {
     fn excluded(&self, name: &str) -> bool {
-        self.exclusions.iter().any(|n| n == name)
+        self.exclusions.globs.iter().any(|n| n.is_match(name))
     }
 }
 
@@ -90,14 +114,19 @@ fn simple_get(url: &str) -> reqwest::Result<reqwest::blocking::Response> {
 }
 
 impl TopCrates {
-    /// List top 100 crates by number of downloads on crates.io.
+    /// List top crates by number of downloads on crates.io.
     fn download() -> TopCrates {
-        let resp =
-            simple_get("https://crates.io/api/v1/crates?page=1&per_page=100&sort=downloads")
-                .expect("Could not fetch top crates");
-        assert!(resp.status().is_success(), "Could not download top crates; HTTP status was {}", resp.status());
-
-        serde_json::from_reader(resp).expect("Invalid JSON")
+        let mut top = TopCrates { crates: Vec::new() };
+        for page in 1..=1 {
+            let url = format!(
+                "https://crates.io/api/v1/crates?page={}&per_page=100&sort=downloads",
+                page
+            );
+            let resp = simple_get(&url).expect("Failed to fetch crates.io");
+            let p: TopCrates = serde_json::from_reader(resp).expect("Invalid JSON");
+            top.crates.extend(p.crates);
+        }
+        top
     }
 
     fn add_rust_cookbook_crates(&mut self) {
@@ -105,7 +134,11 @@ impl TopCrates {
             "https://raw.githubusercontent.com/rust-lang-nursery/rust-cookbook/master/Cargo.toml",
         )
         .expect("Could not fetch cookbook manifest");
-        assert!(resp.status().is_success(), "Could not download cookbook; HTTP status was {}", resp.status());
+        assert!(
+            resp.status().is_success(),
+            "Could not download cookbook; HTTP status was {}",
+            resp.status()
+        );
 
         let mut content = String::new();
         resp.read_to_string(&mut content)
@@ -137,82 +170,7 @@ impl TopCrates {
     }
 }
 
-/// Finds the features specified by the custom metadata of `pkg`.
-///
-/// Our custom metadata format looks like:
-///
-///     [package.metadata.playground]
-///     default-features = true
-///     features = ["std", "extra-traits"]
-///     all-features = false
-///
-/// All fields are optional.
-fn playground_metadata_features(pkg: &Package) -> Option<(Vec<String>, bool)> {
-    let custom_metadata = pkg.manifest().custom_metadata()?;
-    let playground_metadata = custom_metadata.get("playground")?;
-
-    #[derive(Deserialize)]
-    #[serde(default, rename_all = "kebab-case")]
-    struct Metadata {
-        features: Vec<String>,
-        default_features: bool,
-        all_features: bool,
-    }
-
-    impl Default for Metadata {
-        fn default() -> Self {
-            Metadata {
-                features: Vec::new(),
-                default_features: true,
-                all_features: false,
-            }
-        }
-    }
-
-    let metadata = match playground_metadata.clone().try_into::<Metadata>() {
-        Ok(metadata) => metadata,
-        Err(err) => {
-            eprintln!(
-                "Failed to parse custom metadata for {} {}: {}",
-                pkg.name(),
-                pkg.version(),
-                err
-            );
-            return None;
-        }
-    };
-
-    // If `all-features` is set then we ignore `features`.
-    let summary = pkg.summary();
-    let mut enabled_features: BTreeSet<String> = if metadata.all_features {
-        summary.features().keys().map(ToString::to_string).collect()
-    } else {
-        metadata.features.into_iter().collect()
-    };
-
-    // If not opting out of default features, remove default features from the
-    // explicit features list. This avoids ongoing spurious diffs in our
-    // generated Cargo.toml as default features are added to a library.
-    if metadata.default_features {
-        if let Some(default_feature_names) = summary.features().get("default") {
-            enabled_features.remove("default");
-            for feature in default_feature_names {
-                enabled_features.remove(&feature.to_string());
-            }
-        }
-    }
-
-    if !enabled_features.is_empty() || !metadata.default_features {
-        Some((
-            enabled_features.into_iter().collect(),
-            metadata.default_features,
-        ))
-    } else {
-        None
-    }
-}
-
-pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, DependencySpec>, Vec<CrateInformation>) {
+pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
     // Setup to interact with cargo.
     let config = Config::default().expect("Unable to create default Cargo config");
     let _lock = config.acquire_package_cache_lock();
@@ -224,11 +182,14 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
     top.add_rust_cookbook_crates();
     top.add_curated_crates(modifications);
 
+    println!("{:?} crates", top.crates.len());
+
     // Find the newest (non-prerelease, non-yanked) versions of all
     // the interesting crates.
     let mut summaries = Vec::new();
     for Crate { name } in &top.crates {
         if modifications.excluded(name) {
+            println!("Excluding {}", name);
             continue;
         }
 
@@ -247,6 +208,15 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
             .filter(|summary| !summary.version().is_prerelease())
             .max_by_key(|summary| summary.version().clone())
             .unwrap_or_else(|| panic!("Registry has no viable versions of {}", name));
+
+
+        println!("{}", name);
+        // for dep in summary.dependencies() {
+        //     println!("  {:?}", dep);
+        // }
+        // println!();
+
+        // panic!();
 
         // Add a dependency on this crate.
         summaries.push((
@@ -269,11 +239,15 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
         .expect("Unable to resolve dependencies");
 
     // Find crates incompatible with the playground's platform
-    let mut valid_for_our_platform: BTreeSet<_> = summaries.iter().map(|(s, _)| s.package_id()).collect();
+    let mut valid_for_our_platform: BTreeSet<_> =
+        summaries.iter().map(|(s, _)| s.package_id()).collect();
 
-    let ct = CompileTarget::new(PLAYGROUND_TARGET_PLATFORM).expect("Unable to create a CompileTarget");
+    let ct =
+        CompileTarget::new(PLAYGROUND_TARGET_PLATFORM).expect("Unable to create a CompileTarget");
     let ck = CompileKind::Target(ct);
-    let rustc = config.load_global_rustc(None).expect("Unable to load the global rustc");
+    let rustc = config
+        .load_global_rustc(None)
+        .expect("Unable to load the global rustc");
 
     let ti = TargetInfo::new(&config, &[ck], &rustc, ck).expect("Unable to create a TargetInfo");
     let cc = ti.cfg();
@@ -285,9 +259,10 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
 
         for package_id in to_visit {
             for (dep_pkg, deps) in resolve.deps(package_id) {
-
                 let for_this_platform = deps.iter().any(|dep| {
-                    dep.platform().map_or(true, |platform| platform.matches(PLAYGROUND_TARGET_PLATFORM, cc))
+                    dep.platform().map_or(true, |platform| {
+                        platform.matches(PLAYGROUND_TARGET_PLATFORM, cc)
+                    })
                 });
 
                 if for_this_platform {
@@ -326,7 +301,6 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
             .then(a.version().cmp(&b.version()).reverse())
     });
 
-    let mut dependencies = BTreeMap::new();
     let mut infos = Vec::new();
 
     for (name, pkgs) in &packages.into_iter().group_by(|pkg| pkg.name()) {
@@ -340,6 +314,7 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
                 .iter()
                 .flat_map(|target| match target.kind() {
                     TargetKind::Lib(_) => Some(target.crate_name()),
+                    TargetKind::Bin => Some(target.crate_name()),
                     _ => None,
                 })
                 .next()
@@ -357,19 +332,6 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
                 )
             };
 
-            let (features, default_features) =
-                playground_metadata_features(&pkg).unwrap_or_else(|| (Vec::new(), true));
-
-            dependencies.insert(
-                exposed_name.clone(),
-                DependencySpec {
-                    package: name.to_string(),
-                    version: version.to_string(),
-                    features,
-                    default_features,
-                },
-            );
-
             infos.push(CrateInformation {
                 name: name.to_string(),
                 version: version.to_string(),
@@ -380,5 +342,5 @@ pub fn generate_info(modifications: &Modifications) -> (BTreeMap<String, Depende
         }
     }
 
-    (dependencies, infos)
+    infos
 }

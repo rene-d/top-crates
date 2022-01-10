@@ -1,4 +1,16 @@
-exclusions = []
+exclusions = [
+    "bitcoin*",
+    "solana*",
+    "ethereum*",
+
+    "sentry*",
+
+    "curl_sys",
+    "neon_sys",
+    "sentry-contrib-native-sys",
+    "rusty_v8",
+    "rustc-serialize",
+]
 
 additions = [
     # Crates that the compiler recommends
@@ -6,6 +18,7 @@ additions = [
     "async-trait",
     "async-recursion",
 
+    "globset",
     "flatbuffers",
     "protobuf",
     "scan_fmt",
@@ -17,28 +30,15 @@ additions = [
     "structopt",
     "structopt-derive",
 
-#    "panamax",
-#    "lsd",
-#    "ripgrep",
-#    "procs",
-#    "dua-cli",
-#    "bottom",
-#    "dust",
-#    "cross",
+    "panamax",
+    "lsd",
+    "ripgrep",
+    "procs",
+    "dua-cli",
+    "bottom",
+    "dust",
+    "cross",
     "tui",
-#    "cargo-edit",
-#    "cargo",
-
-    "futures-util",
-    "futures-task",
-    "futures-channel",
-    "futures-sink",
-    "mime",
-    "futures-io",
-    "uuid",
-    "walkdir",
-    "futures-macro",
-    "hex",
-    "tokio-util",
-    "futures-executor"
+    "cargo-edit",
+    "cargo",
 ]
