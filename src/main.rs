@@ -133,8 +133,8 @@ fn get_top_crates() {
 
 fn main() {
     sync_crates_repo(Path::new("."));
-    write_index();
     get_top_crates();
+    write_index();
 }
 
 fn prefix_path(name: &str) -> String {
