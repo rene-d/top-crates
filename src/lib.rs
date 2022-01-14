@@ -15,6 +15,7 @@ use cargo::{
 use globset::{Glob, GlobMatcher};
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
 use std::{
     collections::{BTreeSet, HashSet},
     io::Read,
@@ -55,6 +56,9 @@ pub struct Modifications {
     pub exclusions: Exclusions,
     #[serde(default)]
     pub additions: BTreeSet<String>,
+
+    #[serde(default)]
+    pub commands: BTreeSet<String>,
 }
 
 impl<'de> Deserialize<'de> for Exclusions {
@@ -117,15 +121,33 @@ impl TopCrates {
     /// List top crates by number of downloads on crates.io.
     fn download() -> TopCrates {
         let mut top = TopCrates { crates: Vec::new() };
-        for page in 1..=1 {
-            let url = format!(
-                "https://crates.io/api/v1/crates?page={}&per_page=100&sort=downloads",
-                page
-            );
-            let resp = simple_get(&url).expect("Failed to fetch crates.io");
-            let p: TopCrates = serde_json::from_reader(resp).expect("Invalid JSON");
-            top.crates.extend(p.crates);
-        }
+
+        let mut get_top = |pages, count, category| {
+
+            let category = if category != "" {
+                format!("&category={}", category)
+            } else {
+                "".to_string()
+            };
+
+            for page in 1..=pages {
+                let url = format!(
+                    "https://crates.io/api/v1/crates?page={}&per_page={}&sort=downloads{}",
+                    page, count, category
+                );
+                let resp = simple_get(&url).expect("Failed to fetch crates.io");
+                let p: TopCrates = serde_json::from_reader(resp).expect("Invalid JSON");
+                top.crates.extend(p.crates);
+            }
+        };
+
+        get_top(5, 100, "");
+        get_top(1, 100, "network-programming");
+        get_top(1, 10, "filesystem");
+        get_top(1, 10, "web-programming");
+        // get_top(1, 50, "mathematics");
+        // get_top(1, 50, "science");
+
         top
     }
 
@@ -171,6 +193,34 @@ impl TopCrates {
 }
 
 pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
+    let mut top = TopCrates::download();
+    top.add_rust_cookbook_crates();
+    top.add_curated_crates(modifications);
+
+    println!("{:?} crates", top.crates.len());
+
+    let mut crates: Vec<String> = Vec::new();
+    for Crate { name } in &top.crates {
+        crates.push(name.clone());
+    }
+
+    let mut infos = get_packages_info(&crates, modifications);
+
+    for command in &modifications.commands {
+        let mut crates: Vec<String> = Vec::new();
+        crates.push(command.to_owned());
+        let more_infos = get_packages_info(&crates, modifications);
+
+        infos.extend(more_infos);
+    }
+
+    infos.into_values().collect()
+}
+
+fn get_packages_info(
+    crates: &[String],
+    modifications: &Modifications,
+) -> HashMap<String, CrateInformation> {
     // Setup to interact with cargo.
     let config = Config::default().expect("Unable to create default Cargo config");
     let _lock = config.acquire_package_cache_lock();
@@ -178,16 +228,10 @@ pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
     let mut source = RegistrySource::remote(crates_io, &HashSet::new(), &config);
     source.update().expect("Unable to update registry");
 
-    let mut top = TopCrates::download();
-    top.add_rust_cookbook_crates();
-    top.add_curated_crates(modifications);
-
-    println!("{:?} crates", top.crates.len());
-
     // Find the newest (non-prerelease, non-yanked) versions of all
     // the interesting crates.
     let mut summaries = Vec::new();
-    for Crate { name } in &top.crates {
+    for name in crates.iter() {
         if modifications.excluded(name) {
             println!("Excluding {}", name);
             continue;
@@ -209,10 +253,9 @@ pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
             .max_by_key(|summary| summary.version().clone())
             .unwrap_or_else(|| panic!("Registry has no viable versions of {}", name));
 
-
         println!("{}", name);
         // for dep in summary.dependencies() {
-        //     println!("  {:?}", dep);
+        //     println!("  {}", dep.package_name());
         // }
         // println!();
 
@@ -301,7 +344,7 @@ pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
             .then(a.version().cmp(&b.version()).reverse())
     });
 
-    let mut infos = Vec::new();
+    let mut infos = HashMap::new();
 
     for (name, pkgs) in &packages.into_iter().group_by(|pkg| pkg.name()) {
         let mut first = true;
@@ -332,11 +375,14 @@ pub fn generate_info(modifications: &Modifications) -> Vec<CrateInformation> {
                 )
             };
 
-            infos.push(CrateInformation {
-                name: name.to_string(),
-                version: version.to_string(),
-                id: exposed_name,
-            });
+            infos.insert(
+                exposed_name.clone(),
+                CrateInformation {
+                    name: name.to_string(),
+                    version: version.to_string(),
+                    id: exposed_name,
+                },
+            );
 
             first = false;
         }
