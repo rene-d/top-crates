@@ -1,2 +1,4 @@
-target
+target/
 crate-information.json
+crates.json
+selected_crates.json
