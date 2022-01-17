@@ -18,7 +18,6 @@ exclusions = [
     "gloo*",
 ]
 
-
 commands = [
     "panamax",
     "lsd",
