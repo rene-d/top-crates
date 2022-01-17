@@ -14,12 +14,10 @@ exclusions = [
     "vsdb*",
     "btm",
     "js-sys*",
+    "jni",
+    "gloo*",
 ]
 
-additions = [
-    "md5",
-    "rand"
-]
 
 commands = [
     "panamax",
@@ -29,15 +27,12 @@ commands = [
     "dua-cli",
     "bottom",
     "dust",
-    "cross",
     "cargo-edit",
     "cargo",
     "kmon",
 ]
 
-xadditions = [
-    # Crates that the compiler recommends
-    # rg 'https://crates.io/crates/[a-z_-]+' --glob '*.stderr' --only-matching --no-line-number --no-filename | sort | uniq | cut -d '/' -f 5
+additions = [
     "async-trait",
     "async-recursion",
 

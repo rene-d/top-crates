@@ -123,7 +123,6 @@ impl TopCrates {
         let mut top = TopCrates { crates: Vec::new() };
 
         let mut get_top = |pages, count, category| {
-
             let category = if category != "" {
                 format!("&category={}", category)
             } else {
