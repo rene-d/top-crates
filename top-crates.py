@@ -161,7 +161,6 @@ def semver_match(pattern, version):
 
         except Exception as e:
             print()
-
             print(f'ERROR semver_match("{pattern}", "{version}")')
             print()
             raise e
@@ -181,7 +180,8 @@ def find_matching_version(pattern, versions):
                     m = (w, item)
 
         if not m:
-            print(pattern, list(k["vers"] for k in versions.values()))
+            # fallback
+            # print(pattern, list(k["vers"] for k in versions.values()))
             # assert False
             m = (None, last)
         return m[1]
@@ -270,7 +270,7 @@ while len(a.crates) > 0:
 
             if name not in seen:
                 a.add(name, req)
-                print("adding", name, req)
+                print("      adding", name, req)
             else:
                 assert False
 
