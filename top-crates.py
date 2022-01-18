@@ -192,13 +192,20 @@ class SemVer:
     def find_matching(pattern, versions):
         try:
             m = None
+            m_yanked = None
             last = None
             for v, item in versions.items():
                 last = item
                 w = SemVer(v)
                 if w.match(pattern):
-                    if m is None or w.compare(m[0]) > 0:
-                        m = (w, item)
+                    if item["yanked"] == False:
+                        if m is None or w.compare(m[0]) > 0:
+                            m = (w, item)
+                    else:
+                        if m_yanked is None or w.compare(m_yanked[0]) > 0:
+                            m_yanked = (w, item)
+            if not m:
+                m = m_yanked
             if not m:
                 m = (None, last)
             return m[1]
@@ -291,7 +298,8 @@ class TopCrates:
         while len(self.crates) > 0:
 
             n += 1
-            if n > 10000:
+            if n > 20000:
+                print("too many iterations")
                 break
 
             crate, versions = self.crates.popitem()
@@ -338,16 +346,19 @@ class TopCrates:
                 for dep in k["deps"]:
                     name, req = dep["name"], dep["req"]
 
+                    if "package" in dep:
+                        name = dep["package"]
+
                     if self.verbose:
                         print(f"      found: {name} {req}  {dep['kind']} {dep['optional'] and 'optional' or ''}")
 
-                    if dep["kind"] == "dev":
-                        continue
+                    # if dep["kind"] == "dev":
+                    #     continue
 
-                    if dep["optional"] == True:
-                        continue
+                    # if dep["optional"] == True:
+                    #     continue
 
-                    assert dep["kind"] in ["normal", "build"]
+                    assert dep["kind"] in ["normal", "build", "dev"]
 
                     if name not in seen:
                         self.add(name, req)
@@ -401,7 +412,7 @@ class TopCrates:
 def main():
     parser = argparse.ArgumentParser(description="Create an index for the top crates")
 
-    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("-d", "--download", action="store_true", help="Force build the list of crates")
     parser.add_argument("-u", "--update", action="store_true", help="Fetch the upstream")
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
