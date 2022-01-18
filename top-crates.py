@@ -5,121 +5,206 @@ import toml
 import json
 from pathlib import Path
 from collections import defaultdict
-import semver
 import re
 import sys
 import subprocess
+import argparse
 
 
-def semver_match(pattern, version):
+class SemVer:
+    _REGEX = re.compile(
+        r"""
+            ^
+            (?P<major>0|[1-9]\d*)
+            \.
+            (?P<minor>0|[1-9]\d*)
+            \.
+            (?P<patch>0|[1-9]\d*)
+            (?:-(?P<prerelease>
+                (?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)
+                (?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*
+            ))?
+            (?:\+(?P<build>
+                [0-9a-zA-Z-]+
+                (?:\.[0-9a-zA-Z-]+)*
+            ))?
+            $
+        """,
+        re.VERBOSE,
+    )
 
-    v = semver.VersionInfo.parse(version)
+    def __init__(self, version):
+        """Parse a SemVer string."""
 
-    def expr(pattern):
+        self.raw_version = version
 
-        pattern = pattern.strip()
+        match = SemVer._REGEX.match(version)
+        if match is None:
+            raise ValueError(f"{version} is not valid SemVer string")
 
+        parts = match.groups()
+        self.parts = (int(parts[0]), int(parts[1]), int(parts[2]), parts[3], parts[4])
+
+        assert str(self) == version
+
+    def __str__(self):
+        s = ".".join(map(str, self.parts[:3]))
+        if self.parts[3]:
+            s += f"-{self.parts[3]}"
+        if self.parts[4]:
+            s += f"+{self.parts[4]}"
+        return s
+
+    def compare(self, other):
+        """Compare two versions strings."""
+
+        if not isinstance(other, SemVer):
+            other = SemVer(other)
+
+        def _cmp(a, b):
+            return (a > b) - (a < b)
+
+        def _nat_cmp(a, b):
+            def convert(text):
+                return int(text) if re.match("^[0-9]+$", text) else text
+
+            def split_key(key):
+                return [convert(c) for c in key.split(".")]
+
+            def cmp_prerelease_tag(a, b):
+                if isinstance(a, int) and isinstance(b, int):
+                    return _cmp(a, b)
+                elif isinstance(a, int):
+                    return -1
+                elif isinstance(b, int):
+                    return 1
+                else:
+                    return _cmp(a, b)
+
+            a, b = a or "", b or ""
+            a_parts, b_parts = split_key(a), split_key(b)
+            for sub_a, sub_b in zip(a_parts, b_parts):
+                cmp_result = cmp_prerelease_tag(sub_a, sub_b)
+                if cmp_result != 0:
+                    return cmp_result
+            else:
+                return _cmp(len(a), len(b))
+
+        c = _cmp(self.parts[:3], other.parts[:3])
+        if c != 0:
+            return c
+
+        rc1, rc2 = self.parts[3], other.parts[3]
+
+        if not rc1 and not rc2:
+            rccmp = c
+        elif not rc1:
+            rccmp = 1
+        elif not rc2:
+            rccmp = -1
+        else:
+            rccmp = _nat_cmp(rc1, rc2)
+
+        return rccmp
+
+    def match(self, pattern):
+        def expr(pattern):
+
+            pattern = pattern.strip()
+
+            try:
+                if pattern == "*":
+                    return True
+
+                if pattern[0] == "=":
+                    p = pattern[1:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    return p == self.raw_version
+
+                if pattern[0:2] == ">=":
+                    p = pattern[2:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    if re.match(r"^\d+$", p):
+                        p += ".0.0"
+                    elif re.match(r"^\d+\.\d+$", p):
+                        p += ".0"
+                    return self.compare(p) >= 0
+
+                if pattern[0:2] == "<=":
+                    p = pattern[2:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    if re.match(r"^\d+$", p):
+                        p += ".9999999.9999999"
+                    elif re.match(r"^\d+\.\d+$", p):
+                        p += ".9999999"
+                    return self.compare(p) <= 0
+
+                if pattern[0:1] == ">":
+                    p = pattern[1:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    if re.match(r"^\d+$", p):
+                        p += ".0.0"
+                    elif re.match(r"^\d+\.\d+$", p):
+                        p += ".0"
+                    return self.compare(p) > 0
+
+                if pattern[0:1] == "<":
+                    p = pattern[1:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    if re.match(r"^\d+$", p):
+                        p += ".9999999.9999999"
+                    elif re.match(r"^\d+\.\d+$", p):
+                        p += ".9999999"
+                    return self.compare(p) < 0
+
+                if pattern[0] == "^":
+                    p = pattern[1:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    a = p.split(".")
+                    b = self.raw_version.split(".")
+                    return a == b[: len(a)]
+
+                if pattern[0] == "~":
+                    p = pattern[1:].lstrip()
+                    assert p[0].isdigit() and p.find("*") == -1
+                    a = p.split(".")
+                    b = self.raw_version.split(".")
+                    return a == b[: len(a)]
+
+                assert pattern[0].isdigit()
+
+                if pattern.find("*") != -1:
+                    p = re.escape(pattern)
+                    p = p.replace(r"\*", r".*")
+                    p = "^" + p + "$"
+                    return re.match(p, self.raw_version) is not None
+
+                return pattern == self.raw_version
+
+            except Exception as e:
+                print(f'ERROR semver_match("{pattern}", "{self}")')
+                raise e
+
+        return all(expr(p) for p in pattern.split(","))
+
+    @staticmethod
+    def find_matching(pattern, versions):
         try:
-            if pattern == "*":
-                return True
-
-            if pattern[0] == "=":
-                p = pattern[1:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                return p == version
-
-            if pattern[0:2] == ">=":
-                p = pattern[2:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                if re.match(r"^\d+$", p):
-                    p += ".0.0"
-                elif re.match(r"^\d+\.\d+$", p):
-                    p += ".0"
-                return v.compare(p) >= 0
-
-            if pattern[0:2] == "<=":
-                p = pattern[2:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                if re.match(r"^\d+$", p):
-                    p += ".9999999.9999999"
-                elif re.match(r"^\d+\.\d+$", p):
-                    p += ".9999999"
-                return v.compare(p) <= 0
-
-            if pattern[0:1] == ">":
-                p = pattern[1:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                if re.match(r"^\d+$", p):
-                    p += ".0.0"
-                elif re.match(r"^\d+\.\d+$", p):
-                    p += ".0"
-                return v.compare(p) > 0
-
-            if pattern[0:1] == "<":
-                p = pattern[1:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                if re.match(r"^\d+$", p):
-                    p += ".9999999.9999999"
-                elif re.match(r"^\d+\.\d+$", p):
-                    p += ".9999999"
-                return v.compare(p) < 0
-
-            if pattern[0] == "^":
-                p = pattern[1:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                a = p.split(".")
-                b = version.split(".")
-                return a == b[: len(a)]
-
-            if pattern[0] == "~":
-                p = pattern[1:].lstrip()
-                assert p[0].isdigit() and p.find("*") == -1
-                a = p.split(".")
-                b = version.split(".")
-                return a == b[: len(a)]
-
-            assert pattern[0].isdigit()
-
-            if pattern.find("*") != -1:
-                p = re.escape(pattern)
-                p = p.replace(r"\*", r".*")
-                p = "^" + p + "$"
-                return re.match(p, version) is not None
-
-            return pattern == version
+            m = None
+            last = None
+            for v, item in versions.items():
+                last = item
+                w = SemVer(v)
+                if w.match(pattern):
+                    if m is None or w.compare(m[0]) > 0:
+                        m = (w, item)
+            if not m:
+                m = (None, last)
+            return m[1]
 
         except Exception as e:
-            print()
-            print(f'ERROR semver_match("{pattern}", "{version}")')
-            print()
+            print(f'ERROR find_matching("{pattern}", {versions.keys()})')
             raise e
-
-    return all(expr(p) for p in pattern.split(","))
-
-
-def find_matching_version(pattern, versions):
-    try:
-        m = None
-        last = None
-        for v, item in versions.items():
-            last = item
-            if semver_match(pattern, v):
-                w = semver.VersionInfo.parse(v)
-                if m is None or w.compare(m[0]) > 0:
-                    m = (w, item)
-
-        if not m:
-            # fallback
-            # print(pattern, list(k["vers"] for k in versions.values()))
-            # assert False
-            m = (None, last)
-        return m[1]
-
-    except Exception as e:
-        print()
-        print(f'ERROR find_matching_version("{pattern}", {versions.keys()})')
-        print()
-        raise e
 
 
 def prefix_name(name):
@@ -237,7 +322,7 @@ class TopCrates:
 
             for vers in versions:
 
-                k = find_matching_version(vers, info)
+                k = SemVer.find_matching(vers, info)
 
                 slug = (crate, k["vers"])
                 if slug in seen:
@@ -313,9 +398,21 @@ class TopCrates:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Create an index for the top crates")
+
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("-d", "--download", action="store_true", help="Force build the list of crates")
+    parser.add_argument("-u", "--update", action="store_true", help="Fetch the upstream")
+    parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
+
+    args = parser.parse_args()
+
     a = TopCrates()
 
-    if Path("crates.json").is_file() == False or (len(sys.argv) > 1 and sys.argv[1] == "download"):
+    a.verbose = args.verbose
+
+    if args.download or not Path("crates.json").is_file():
+        print("Building the top crates list")
         a.download()
         a.cookbook()
         a.curated()
@@ -324,8 +421,22 @@ def main():
     else:
         a.load("crates.json")
 
+    if args.update:
+        subprocess.run(["git", "fetch", "--all"], cwd="crates.io-index")
+        subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="crates.io-index")
+
     a.resolve_deps()
+
+    if args.commit:
+        subprocess.run(["git", "clean", "-ffdx"], cwd="top-crates-index")
+        subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="top-crates-index")
+
     a.make_git_index()
+
+    if args.commit:
+        subprocess.run(["git", "add", "."], cwd="top-crates-index")
+        subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
+        subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
 
 
 if __name__ == "__main__":
