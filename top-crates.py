@@ -12,6 +12,7 @@ import argparse
 
 
 class SemVer:
+    # regex from https://github.com/python-semver/python-semver
     _REGEX = re.compile(
         r"""
             ^
