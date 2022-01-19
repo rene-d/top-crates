@@ -56,7 +56,7 @@ class SemVer:
             s += f"+{self.parts[4]}"
         return s
 
-    def compare(self, other):
+    def compare(self, other, strict=False):
         """Compare two versions strings."""
 
         if not isinstance(other, SemVer):
@@ -92,7 +92,7 @@ class SemVer:
                 return _cmp(len(a), len(b))
 
         c = _cmp(self.parts[:3], other.parts[:3])
-        if c != 0:
+        if c != 0 or strict:
             return c
 
         rc1, rc2 = self.parts[3], other.parts[3]
@@ -108,10 +108,75 @@ class SemVer:
 
         return rccmp
 
+    # https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#caret-requirements
+    def _caret_requirement(pattern):
+        a = pattern[1:].split(".")
+        length = len(a)
+
+        min_pattern = f">={pattern[1:]}"
+        if length == 1:
+            min_pattern += ".0.0"
+        elif length == 2:
+            min_pattern += ".0"
+
+        if a[0] == "0":
+            if length == 1:
+                max_pattern = "<1.0.0"
+            elif len(a) == 2:
+                max_pattern = f"<0.{int(a[1]) + 1}.0"
+            else:
+                if a[1] == "0":
+                    max_pattern = f"<0.{a[1]}.{int(a[2]) + 1}"
+                else:
+                    max_pattern = f"<0.{int(a[1]) + 1}.0"
+        else:
+            max_pattern = f"<{int(a[0]) + 1}.0.0"
+
+        # if a[1] == "0":
+        #     if length == 1:
+        #         max_pattern = "0.*"
+        #     elif length == 2:
+        #         max_pattern = f"0.{a[1]}.*"
+        #     else:
+        #         max_pattern = f"0.{a[1]}.{int(a[2])}-*"
+        #         assert False, "not implemented"
+        # else:
+        #     max_pattern = f"{a[0]}.*"
+
+        return min_pattern, max_pattern
+
+    # https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#tilde-requirements
+    def _tilde_requirement(pattern):
+        a = pattern[1:].split(".")
+        length = len(a)
+
+        min_pattern = f">={pattern[1:]}"
+        if length == 1:
+            min_pattern += ".0.0"
+        elif length == 2:
+            min_pattern += ".0"
+
+        if length == 1:
+            max_pattern = f"<{int(a[0])+1}.0.0"
+        else:
+            max_pattern = f"<{a[0]}.{int(a[1]) + 1}.0"
+
+        return min_pattern, max_pattern
+
     def match(self, pattern):
-        def expr(pattern):
+        """"""
+
+        def expr(pattern, strict=False):
 
             pattern = pattern.strip()
+
+            if pattern[0] == "^":
+                p1, p2 = SemVer._caret_requirement(pattern)
+                return expr(p1) and expr(p2, True)
+
+            if pattern[0] == "~":
+                p1, p2 = SemVer._tilde_requirement(pattern)
+                return expr(p1) and expr(p2, True)
 
             try:
                 if pattern == "*":
@@ -120,6 +185,17 @@ class SemVer:
                 if pattern[0] == "=":
                     p = pattern[1:].lstrip()
                     assert p[0].isdigit() and p.find("*") == -1
+
+                    if p != self.raw_version:
+                        b = p.split(".")
+                        if len(b) == 2:
+                            p += ".0"
+                        elif len(b) == 1:
+                            p += ".0.0"
+                        a = SemVer(p)
+                        min_parts = min(len(self.parts), len(b))
+                        return self.parts[:min_parts] == a.parts[:min_parts]
+
                     return p == self.raw_version
 
                 if pattern[0:2] == ">=":
@@ -156,21 +232,21 @@ class SemVer:
                         p += ".9999999.9999999"
                     elif re.match(r"^\d+\.\d+$", p):
                         p += ".9999999"
-                    return self.compare(p) < 0
+                    return self.compare(p, strict) < 0
 
-                if pattern[0] == "^":
-                    p = pattern[1:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
-                    a = p.split(".")
-                    b = self.raw_version.split(".")
-                    return a == b[: len(a)]
+                # if pattern[0] == "^":
+                #     p = pattern[1:].lstrip()
+                #     assert p[0].isdigit() and p.find("*") == -1
+                #     a = p.split(".")
+                #     b = self.raw_version.split(".")
+                #     return a == b[: len(a)]
 
-                if pattern[0] == "~":
-                    p = pattern[1:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
-                    a = p.split(".")
-                    b = self.raw_version.split(".")
-                    return a == b[: len(a)]
+                # if pattern[0] == "~":
+                #     p = pattern[1:].lstrip()
+                #     assert p[0].isdigit() and p.find("*") == -1
+                #     a = p.split(".")
+                #     b = self.raw_version.split(".")
+                #     return a == b[: len(a)]
 
                 assert pattern[0].isdigit()
 
@@ -190,24 +266,38 @@ class SemVer:
 
     @staticmethod
     def find_matching(pattern, versions):
+
         try:
             m = None
             m_yanked = None
             last = None
+
             for v, item in versions.items():
                 last = item
                 w = SemVer(v)
                 if w.match(pattern):
+                    # print("match", pattern, item["name"], item["vers"], item["yanked"] and "yanked" or "")
+
                     if item["yanked"] == False:
                         if m is None or w.compare(m[0]) > 0:
                             m = (w, item)
                     else:
                         if m_yanked is None or w.compare(m_yanked[0]) > 0:
                             m_yanked = (w, item)
-            if not m:
+
+            if m_yanked and not m:
+                print(
+                    "WARNING: no matching version found, using yanked version",
+                    m_yanked[1]["name"],
+                    pattern,
+                    m_yanked[0] and "yanked" or "",
+                )
                 m = m_yanked
+
             if not m:
                 m = (None, last)
+                print("WARNING: no matching version found, using latest version", m[1]["name"], pattern)
+
             return m[1]
 
         except Exception as e:
@@ -289,7 +379,7 @@ class TopCrates:
         for k in d["commands"]:
             self.add(k)
 
-    def resolve_deps(self):
+    def resolve_deps(self, max_iterations=20000):
 
         print(f"Analyzing {len(self.crates)} crates")
 
@@ -298,7 +388,7 @@ class TopCrates:
         while len(self.crates) > 0:
 
             n += 1
-            if n > 20000:
+            if n > max_iterations:
                 print("too many iterations")
                 break
 
@@ -417,11 +507,19 @@ def main():
     parser.add_argument("-u", "--update", action="store_true", help="Fetch the upstream")
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
 
+    parser.add_argument("-t", help="test")
+
     args = parser.parse_args()
 
     a = TopCrates()
 
     a.verbose = args.verbose
+
+    if args.t:
+        name, version = args.t.split(" ", 1)
+        a.add(name, version)
+        a.resolve_deps(1)
+        exit()
 
     if args.download or not Path("crates.json").is_file():
         print("Building the top crates list")
@@ -449,6 +547,25 @@ def main():
         subprocess.run(["git", "add", "."], cwd="top-crates-index")
         subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
         subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
+
+
+assert SemVer._caret_requirement("^1.2.3".strip()) == (">=1.2.3", "<2.0.0")
+assert SemVer._caret_requirement("^1.2  ".strip()) == (">=1.2.0", "<2.0.0")
+assert SemVer._caret_requirement("^1    ".strip()) == (">=1.0.0", "<2.0.0")
+assert SemVer._caret_requirement("^0.2.3".strip()) == (">=0.2.3", "<0.3.0")
+assert SemVer._caret_requirement("^0.2  ".strip()) == (">=0.2.0", "<0.3.0")
+assert SemVer._caret_requirement("^0.0.3".strip()) == (">=0.0.3", "<0.0.4")
+assert SemVer._caret_requirement("^0.0  ".strip()) == (">=0.0.0", "<0.1.0")
+assert SemVer._caret_requirement("^0    ".strip()) == (">=0.0.0", "<1.0.0")
+
+assert SemVer._tilde_requirement("~1.2.3".strip()) == (">=1.2.3", "<1.3.0")
+assert SemVer._tilde_requirement("~1.2  ".strip()) == (">=1.2.0", "<1.3.0")
+assert SemVer._tilde_requirement("~1    ".strip()) == (">=1.0.0", "<2.0.0")
+
+
+# v = SemVer("0.4.0-alpha.1")
+# print(v.compare("0.4.0"))
+# print(v.match("^0.3.0"))
 
 
 if __name__ == "__main__":

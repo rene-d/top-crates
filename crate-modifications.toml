@@ -13,9 +13,6 @@ exclusions = [
 
     "vsdb*",
     "btm",
-    "js-sys*",
-    "jni",
-    "gloo*",
 ]
 
 commands = [
