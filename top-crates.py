@@ -381,7 +381,7 @@ class TopCrates:
 
     def resolve_deps(self, max_iterations=20000):
 
-        print(f"Analyzing {len(self.crates)} crates")
+        print(f"Analyze {len(self.crates)} crates")
 
         seen = set()
         n = 0
@@ -522,7 +522,7 @@ def main():
         exit()
 
     if args.download or not Path("crates.json").is_file():
-        print("Building the top crates list")
+        print("Build the top crates list")
         a.download()
         a.cookbook()
         a.curated()
@@ -532,6 +532,7 @@ def main():
         a.load("crates.json")
 
     if args.update:
+        print("Update main index")
         subprocess.run(["git", "fetch", "--all"], cwd="crates.io-index")
         subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="crates.io-index")
 
@@ -547,25 +548,6 @@ def main():
         subprocess.run(["git", "add", "."], cwd="top-crates-index")
         subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
         subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
-
-
-assert SemVer._caret_requirement("^1.2.3".strip()) == (">=1.2.3", "<2.0.0")
-assert SemVer._caret_requirement("^1.2  ".strip()) == (">=1.2.0", "<2.0.0")
-assert SemVer._caret_requirement("^1    ".strip()) == (">=1.0.0", "<2.0.0")
-assert SemVer._caret_requirement("^0.2.3".strip()) == (">=0.2.3", "<0.3.0")
-assert SemVer._caret_requirement("^0.2  ".strip()) == (">=0.2.0", "<0.3.0")
-assert SemVer._caret_requirement("^0.0.3".strip()) == (">=0.0.3", "<0.0.4")
-assert SemVer._caret_requirement("^0.0  ".strip()) == (">=0.0.0", "<0.1.0")
-assert SemVer._caret_requirement("^0    ".strip()) == (">=0.0.0", "<1.0.0")
-
-assert SemVer._tilde_requirement("~1.2.3".strip()) == (">=1.2.3", "<1.3.0")
-assert SemVer._tilde_requirement("~1.2  ".strip()) == (">=1.2.0", "<1.3.0")
-assert SemVer._tilde_requirement("~1    ".strip()) == (">=1.0.0", "<2.0.0")
-
-
-# v = SemVer("0.4.0-alpha.1")
-# print(v.compare("0.4.0"))
-# print(v.match("^0.3.0"))
 
 
 if __name__ == "__main__":
