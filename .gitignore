@@ -1,6 +1,6 @@
 target/
+docker/hello/Cargo.lock
 crate-information.json
 crates.json
 selected_crates.json
-
 local-registry/

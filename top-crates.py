@@ -293,12 +293,12 @@ class SemVer:
                             m_yanked = (w, item)
 
             if m_yanked and not m:
-                print(
-                    "WARNING: no matching version found, using yanked version",
-                    m_yanked[1]["name"],
-                    pattern,
-                    m_yanked[0] and "yanked" or "",
-                )
+                # print(
+                #     "WARNING: no matching version found, using yanked version",
+                #     m_yanked[1]["name"],
+                #     pattern,
+                #     m_yanked[0] and "yanked" or "",
+                # )
                 m = m_yanked
 
             if not m:
@@ -324,17 +324,11 @@ def prefix_name(name):
         return f"{name[:2]}/{name[2:4]}/{name}"
 
 
-def init_mp_session(counter, total):
-    get_context().session = requests.Session()
-    get_context().counter = counter
-    get_context().total = total
-
-
 class TopCrates:
     def __init__(self):
         self.verbose = False
-        self.session = None
         self.crates = defaultdict(set)
+        self.selected_crates = None
 
         conf = tomli.load(open("top-crates.toml", "rb"))
 
@@ -420,6 +414,10 @@ class TopCrates:
 
             crate, versions = self.crates.popitem()
 
+            if any(e.match(crate) for e in self.exclusions):
+                print(f"excluded: {name} {versions}")
+                continue
+
             try:
                 if self.verbose:
                     print(f"{n:03d} {crate} {sorted(versions)}")
@@ -468,12 +466,6 @@ class TopCrates:
                     if self.verbose:
                         print(f"      found: {name} {req}  {dep['kind']} {dep['optional'] and 'optional' or ''}")
 
-                    # if dep["kind"] == "dev":
-                    #     continue
-
-                    # if dep["optional"] == True:
-                    #     continue
-
                     assert dep["kind"] in ["normal", "build", "dev"]
 
                     if name not in seen:
@@ -486,40 +478,29 @@ class TopCrates:
             if self.verbose:
                 print()
 
-        self.seen = seen
+        self.selected_crates = dict()
+        for k, v in seen:
+            self.selected_crates[k] = list()
+        for k, v in seen:
+            self.selected_crates[k].append(v)
 
-    def make_index(self, dest="top-crates-index", crates_dir=None):
+        print(f"Found {len(self.selected_crates)} crates and {len(seen)} versions")
+        json.dump(self.selected_crates, open("selected_crates.json", "w"), indent=2)
 
-        # selected_crates = json.load(open("selected_crates.json"))
+    def make_index(self, index_dir="local-registry/index"):
 
-        selected_crates = dict()
-        for k, v in self.seen:
-            selected_crates[k] = list()
-        for k, v in self.seen:
-            selected_crates[k].append(v)
+        if self.selected_crates is None:
+            self.selected_crates = json.load(open("selected_crates.json"))
 
-        print(f"Found {len(selected_crates)} crates and {len(self.seen)} versions")
-
-        json.dump(selected_crates, open("selected_crates.json", "w"), indent=2)
-
-        for p in Path(dest).glob("*"):
+        # remove the whole index, it will be recreated
+        for p in Path(index_dir).glob("*"):
             if len(p.name) <= 2 and p.is_dir():
                 # skip .git, config.json, etc.
                 shutil.rmtree(p, ignore_errors=True)
 
-        downloads = []
-        if crates_dir:
-            crates_dir = Path(crates_dir)
-
-        for name, versions in selected_crates.items():
+        for name, versions in self.selected_crates.items():
 
             data = Path(f"crates.io-index/{prefix_name(name)}")
-
-            if any(e.match(name) for e in self.exclusions):
-                print(f"excluded: {name} {versions}")
-                if data.exists():
-                    data.unlink()
-                continue
 
             versions = set(versions)
             new_data = []
@@ -528,30 +509,56 @@ class TopCrates:
                 if v["vers"] in versions:
                     new_data.append(line)
 
-                    if crates_dir:
-                        version = v["vers"]
-                        crate_file = f"{name}-{version}.crate"
-
-                        if (crates_dir / crate_file).exists() == False:
-                            downloads.append((name, version))
-
-            f = Path(dest) / prefix_name(name)
+            f = Path(index_dir) / prefix_name(name)
             f.parent.mkdir(exist_ok=True, parents=True)
             new_data.append("")
             f.write_text("\n".join(new_data))
 
+    def download_crates(self, crates_dir="local-registry", purge=False):
+
+        crates_dir = Path(crates_dir)
+        crates_dir.mkdir(exist_ok=True, parents=True)
+
+        existing = set(f.name for f in crates_dir.glob("*.crate"))
+        downloads = []
+
+        for name, versions in self.selected_crates.items():
+            for version in versions:
+                crate_file = f"{name}-{version}.crate"
+                if crate_file not in existing:
+                    downloads.append((name, version))
+                else:
+                    existing.discard(crate_file)
+
+        # existing now contains no more listed crates
+        print(f"{len(existing)} unused crate{'' if len(existing) < 1 else 's'}")
+        if purge:
+            for f in existing:
+                (crates_dir / f).unlink()
+
+        if len(downloads) == 0:
+            print("No new crates to download")
+            return
+
         num = multiprocessing.Value("i", 0)
         total = len(downloads)
 
-        pool = Pool(16, initializer=init_mp_session, initargs=(num, total))
-        download_func = partial(TopCrates.download_crate, crates_dir=crates_dir)
+        # multiprocessing download with 16 workers
+        pool = Pool(16, initializer=TopCrates._init_mp_session, initargs=(num, total))
+        download_func = partial(TopCrates._download_crate, crates_dir=crates_dir)
         pool.map(download_func, downloads)
         pool.close()
         pool.join()
 
-        print()
+        print(f"Downloaded {total} new crate{'' if total < 2 else 's'}", " " * 80)
 
-    def download_crate(name_version, crates_dir):
+    def _init_mp_session(counter, total):
+        """Initialize a multiprocessing session."""
+        get_context().session = requests.Session()
+        get_context().counter = counter
+        get_context().total = total
+
+    def _download_crate(name_version, crates_dir):
 
         name, version = name_version
         context = get_context()
@@ -564,7 +571,7 @@ class TopCrates:
         url = f" https://static.crates.io/crates/{name}/{name}-{version}.crate"
         dest_file = crates_dir / f"{name}-{version}.crate"
 
-        print(f" {counter.value:6}/{context.total}  {url.ljust(120)}\r", end="")
+        print(f"{counter.value:6}/{context.total}  {url.ljust(100)[-100:]}\r", end="")
 
         r = session.get(url)
         dest_file.write_bytes(r.content)
@@ -580,8 +587,9 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("-d", "--download", action="store_true", help="Force build the list of crates")
     parser.add_argument("-u", "--update", action="store_true", help="Fetch the upstream")
+    parser.add_argument("-p", "--purge", action="store_true", help="Remove encumbered crates")
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
-    parser.add_argument("-r", "--git-registry", action="store_true", help="Make a Git registry")
+    parser.add_argument("-g", "--git-registry", action="store_true", help="Make a Git registry")
 
     parser.add_argument("-t", help="test")
 
@@ -629,7 +637,8 @@ def main():
             subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
 
     else:
-        a.make_index("local-registry/index", "local-registry")
+        a.make_index()
+        a.download_crates(purge=args.purge)
 
 
 if __name__ == "__main__":
