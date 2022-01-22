@@ -1,6 +1,3 @@
 [submodule "crates.io-index"]
 	path = crates.io-index
 	url = https://github.com/rust-lang/crates.io-index
-[submodule "top-crates-index"]
-	path = top-crates-index
-	url = http://github.com/rene-d/top-crates-index

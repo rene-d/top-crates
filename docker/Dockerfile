@@ -6,8 +6,8 @@ FROM rust:1
 
 COPY --from=crates /local-registry/ /local-registry/
 
-RUN rustup component add rls
-RUN rustup +nightly component add rustfmt
+RUN rustup +nightly component add rustfmt && \
+    rustup component add clippy rls rust-analysis rust-src rust-docs
 
 COPY docker/config /usr/local/cargo/config
 

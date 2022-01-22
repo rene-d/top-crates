@@ -17,6 +17,8 @@ fn main() {
     let args = Args::parse();
     println!("Hello, {}!", args.name);
 
+    let a="eee".to_owned();
+
     let re = regex::Regex::new(r"^\d+$").unwrap();
     if re.is_match(args.name.as_str()) {
         println!("You're a number 😖");

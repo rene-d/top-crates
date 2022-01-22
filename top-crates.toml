@@ -53,9 +53,14 @@ commands = [
     "dua-cli",
     "bottom",
     "dust",
-    "cargo-edit",
-    "cargo",
     "kmon",
+
+    # https://crates.io/keywords/cargo-subcommand
+    "cargo",
+    "cargo-edit",
+    "cargo-local-registry",
+    "cargo-valgrind",
+    "cargo-tarpaulin",
 ]
 
 additions = [
