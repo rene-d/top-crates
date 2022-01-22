@@ -1,3 +1,5 @@
+// Example for http://github.com/rene-d/top-crates
+
 use clap::Parser;
 use rand;
 use regex;

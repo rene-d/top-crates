@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 
-docker build -t rene2/rust -f devenv/Dockerfile .
+if [[ ${1-} == x ]]; then
+    docker buildx create --use --name buildx-local
+    docker buildx build --platform linux/arm64,linux/amd64 --push -t rene2/rust -f docker/Dockerfile .
+    docker buildx rm buildx-local
+else
+    docker build --platform linux/amd64 -t rene2/rust -f docker/Dockerfile .
+    # docker build --platform linux/arm64 -t rene2/rust -f docker/Dockerfile .
+fi
 
 # should work:
 docker run --rm -ti --network none -w /hello rene2/rust cargo build
