@@ -1,8 +1,8 @@
 // Example for http://github.com/rene-d/top-crates
 
 use clap::Parser;
-use rand;
-use regex;
+use rand::random;
+use regex::Regex;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -17,15 +17,13 @@ fn main() {
     let args = Args::parse();
     println!("Hello, {}!", args.name);
 
-    let a="eee".to_owned();
-
-    let re = regex::Regex::new(r"^\d+$").unwrap();
+    let re = Regex::new(r"^\d+$").unwrap();
     if re.is_match(args.name.as_str()) {
         println!("You're a number 😖");
     } else {
         println!("Your're not a number 🙃");
     }
 
-    let alea = rand::random::<u32>();
+    let alea = random::<u32>();
     println!("Here is a random number: {}", alea);
 }
