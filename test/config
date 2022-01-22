@@ -1,5 +1,0 @@
-[source.localhost]
-registry = "http://<MIRROR>/git/crates.io-index"
-
-[source.crates-io]
-replace-with = "localhost"

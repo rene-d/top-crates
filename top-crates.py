@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 
+import multiprocessing
 import requests
-import toml
+import tomli
 import json
 from pathlib import Path
 from collections import defaultdict
 import re
-import sys
 import subprocess
 import argparse
+import shutil
+import requests
+from dateutil.parser import parse as parsedate
+import os
+from multiprocessing import Pool, get_context
+from functools import partial
+import multiprocessing
 
 
 class SemVer:
@@ -317,13 +324,29 @@ def prefix_name(name):
         return f"{name[:2]}/{name[2:4]}/{name}"
 
 
+def init_mp_session(counter, total):
+    get_context().session = requests.Session()
+    get_context().counter = counter
+    get_context().total = total
+
+
 class TopCrates:
     def __init__(self):
         self.verbose = False
+        self.session = None
         self.crates = defaultdict(set)
 
-        d = toml.load("crate-modifications.toml")
-        self.exclusions = [re.compile("^" + re.escape(k).replace(r"\*", r".*") + "$") for k in d["exclusions"]]
+        conf = tomli.load(open("top-crates.toml", "rb"))
+
+        self.conf_top_crates = conf.get("top-crates", 0)
+        self.conf_categories = conf.get("categories", [])
+        self.conf_cookbook = bool(conf.get("cookbook", False))
+        self.conf_additions = conf.get("additions", [])
+        self.conf_commands = conf.get("commands", [])
+
+        self.exclusions = [
+            re.compile("^" + re.escape(k).replace(r"\*", r".*") + "$") for k in conf.get("exclusions", [])
+        ]
 
     def load(self, filename):
         data = json.load(open(filename))
@@ -341,42 +364,45 @@ class TopCrates:
         self.crates[name].add(version)
 
     def download(self):
-        def get_top(pages, count, category):
+        def get_top(count, category=""):
             if category:
                 category = f"&category={category}"
 
-            for page in range(1, pages + 1):
-                url = f"https://crates.io/api/v1/crates?page={page}&per_page={count}&sort=downloads{category}"
-                r = requests.get(url).json()
+            per_page = 100
+            page = 1
 
-                for crate in r["crates"]:
+            while count > 0:
+                url = f"https://crates.io/api/v1/crates?page={page}&per_page={min(count,per_page)}&sort=downloads{category}"
+                data = requests.get(url).json()
+
+                if self.verbose:
+                    print(url, len(data["crates"]))
+
+                for crate in data["crates"]:
                     if crate["max_stable_version"]:
                         self.add(crate["name"], crate["max_stable_version"])
                     self.add(crate["name"], crate["max_version"])
 
-        get_top(5, 100, "")
-        get_top(1, 100, "network-programming")
-        get_top(1, 50, "filesystem")
-        get_top(1, 50, "web-programming")
-        get_top(1, 50, "mathematics")
-        get_top(1, 50, "science")
-        get_top(1, 50, "data-structures")
-        get_top(1, 50, "asynchronous")
-        get_top(1, 50, "api-bindings")
-        get_top(1, 50, "command-line-utilities")
-        get_top(1, 50, "embedded")
+                page += 1
+                count -= per_page
+
+        get_top(self.conf_top_crates)
+
+        for category in self.conf_categories:
+            for name, count in category.items():
+                get_top(count, name)
 
     def cookbook(self):
-        r = requests.get("https://raw.githubusercontent.com/rust-lang-nursery/rust-cookbook/master/Cargo.toml")
-        d = toml.loads(r.text)
-        for name in d["dependencies"].keys():
-            self.add(name)
+        if self.conf_cookbook:
+            r = requests.get("https://raw.githubusercontent.com/rust-lang-nursery/rust-cookbook/master/Cargo.toml")
+            d = tomli.loads(r.text)
+            for name in d["dependencies"].keys():
+                self.add(name)
 
     def curated(self):
-        d = toml.load("crate-modifications.toml")
-        for k in d["additions"]:
+        for k in self.conf_additions:
             self.add(k)
-        for k in d["commands"]:
+        for k in self.conf_commands:
             self.add(k)
 
     def resolve_deps(self, max_iterations=20000):
@@ -460,9 +486,11 @@ class TopCrates:
             if self.verbose:
                 print()
 
-            self.seen = seen
+        self.seen = seen
 
-    def make_git_index(self):
+    def make_index(self, dest="top-crates-index", crates_dir=None):
+
+        # selected_crates = json.load(open("selected_crates.json"))
 
         selected_crates = dict()
         for k, v in self.seen:
@@ -470,9 +498,18 @@ class TopCrates:
         for k, v in self.seen:
             selected_crates[k].append(v)
 
-        print(f"Got {len(selected_crates)} crates and {len(self.seen)} versions")
+        print(f"Found {len(selected_crates)} crates and {len(self.seen)} versions")
 
         json.dump(selected_crates, open("selected_crates.json", "w"), indent=2)
+
+        for p in Path(dest).glob("*"):
+            if len(p.name) <= 2 and p.is_dir():
+                # skip .git, config.json, etc.
+                shutil.rmtree(p, ignore_errors=True)
+
+        downloads = []
+        if crates_dir:
+            crates_dir = Path(crates_dir)
 
         for name, versions in selected_crates.items():
 
@@ -491,12 +528,50 @@ class TopCrates:
                 if v["vers"] in versions:
                     new_data.append(line)
 
-            f = Path("top-crates-index") / prefix_name(name)
+                    if crates_dir:
+                        version = v["vers"]
+                        crate_file = f"{name}-{version}.crate"
+
+                        if (crates_dir / crate_file).exists() == False:
+                            downloads.append((name, version))
+
+            f = Path(dest) / prefix_name(name)
             f.parent.mkdir(exist_ok=True, parents=True)
             new_data.append("")
             f.write_text("\n".join(new_data))
 
-        subprocess.run(["git", "status", "-s"], cwd="top-crates-index")
+        num = multiprocessing.Value("i", 0)
+        total = len(downloads)
+
+        pool = Pool(16, initializer=init_mp_session, initargs=(num, total))
+        download_func = partial(TopCrates.download_crate, crates_dir=crates_dir)
+        pool.map(download_func, downloads)
+        pool.close()
+        pool.join()
+
+        print()
+
+    def download_crate(name_version, crates_dir):
+
+        name, version = name_version
+        context = get_context()
+        session = context.session
+        counter = context.counter
+
+        with counter.get_lock():
+            counter.value += 1
+
+        url = f" https://static.crates.io/crates/{name}/{name}-{version}.crate"
+        dest_file = crates_dir / f"{name}-{version}.crate"
+
+        print(f" {counter.value:6}/{context.total}  {url.ljust(120)}\r", end="")
+
+        r = session.get(url)
+        dest_file.write_bytes(r.content)
+        if "last-modified" in r.headers:
+            url_date = parsedate(r.headers["last-modified"])
+            mtime = round(url_date.timestamp() * 1_000_000_000)
+            os.utime(dest_file, ns=(mtime, mtime))
 
 
 def main():
@@ -506,6 +581,7 @@ def main():
     parser.add_argument("-d", "--download", action="store_true", help="Force build the list of crates")
     parser.add_argument("-u", "--update", action="store_true", help="Fetch the upstream")
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
+    parser.add_argument("-r", "--git-registry", action="store_true", help="Make a Git registry")
 
     parser.add_argument("-t", help="test")
 
@@ -538,16 +614,22 @@ def main():
 
     a.resolve_deps()
 
-    if args.commit:
-        subprocess.run(["git", "clean", "-ffdx"], cwd="top-crates-index")
-        subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="top-crates-index")
+    if args.git_registry:
+        # not well supported, should git clone/git init before
+        if args.commit:
+            subprocess.run(["git", "clean", "-ffdx"], cwd="top-crates-index")
+            subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="top-crates-index")
 
-    a.make_git_index()
+        a.make_index("top-crates-index")
+        subprocess.run(["git", "status", "-s"], cwd="top-crates-index")
 
-    if args.commit:
-        subprocess.run(["git", "add", "."], cwd="top-crates-index")
-        subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
-        subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
+        if args.commit:
+            subprocess.run(["git", "add", "."], cwd="top-crates-index")
+            subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
+            subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
+
+    else:
+        a.make_index("local-registry/index", "local-registry")
 
 
 if __name__ == "__main__":

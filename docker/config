@@ -1,0 +1,5 @@
+[source.local]
+local-registry = "/local-registry"
+
+[source.crates-io]
+replace-with = "local"

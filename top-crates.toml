@@ -1,8 +1,37 @@
+top-crates = 200
+
+cookbook = true
+
+categories = [
+    { "command-line-utilities" = 0 },
+    { "development-tools" = 10 },
+    { "development-tools::procedural-macro-helpers" = 0 },
+    { "development-tools::cargo-plugins" = 0 },
+    { "development-tools::testing" = 0 },
+    { "development-tools::profiling" = 0 },
+    { "development-tools::ffi" = 0 },
+    { "development-tools::debugging" = 0 },
+    { "development-tools::build-utils" = 0 },
+    { "web-programming" = 20 },
+    { "web-programming::http-client" = 10 },
+    { "web-programming::websocket" = 10 },
+    { "web-programming::http-server" = 10 },
+    { "api-bindings" = 20 },
+    { "network-programming" = 20 },
+    { "data-structures" = 20 },
+    { "cryptography" = 20 },
+    { "asynchronous" = 20 },
+    { "embedded" = 5 },
+    { "algorithms" = 0 },
+    { "mathematics" = 0 },
+    { "science" = 20 },
+    { "filesystem" = 10 },
+]
+
 exclusions = [
     "bitcoin*",
     "solana*",
     "ethereum*",
-
     "sentry*",
 
     "curl_sys",
@@ -16,6 +45,7 @@ exclusions = [
 ]
 
 commands = [
+    "bat",
     "panamax",
     "lsd",
     "ripgrep",
@@ -29,9 +59,6 @@ commands = [
 ]
 
 additions = [
-    "async-trait",
-    "async-recursion",
-
     "globset",
     "flatbuffers",
     "protobuf",
