@@ -12,8 +12,28 @@ This local registry can be added to a Docker image to create an isolated develop
 
 ## Usage
 
+## Installation
+
+```shell
+pip3 install tomli
+
+git clone --recursive https://github.com/rene-d/top-crates
+```
+
+Note the `--recursive` flag: indeed the [full crates index](https://github.com/rust-lang/crates.io-index) is required to resolve dependencies. It takes about 1.5Gb for this index and 0.3Gb for the crates.
+
 Get full usage information with `--help` or `-h`.
 
+### Configuration
+
+The configuration file `top-crates.toml` has six self-explanatory sections:
+
+- `top-crates` : the [most downloaded](https://crates.io/crates?sort=downloads) crates
+- `cookbook` : to add crates from the [Rust Cookbook](https://rust-lang-nursery.github.io/rust-cookbook/)
+- `categories` : most downloaded crates by [category](https://crates.io/categories)
+- `exclusions` : to exclude useless or unwanted crates
+- `additions` : manually added crates
+- `commands` : manually added command line tools
 
 ### Example
 
@@ -25,7 +45,7 @@ Update the [crates.io index](http://github.com/rust-lang/crates.io-index) and pr
 
 ### Cargo config file
 
-Create or add to the file `$CARGO_HOME/config` the following lines:
+Create or add to the file `$CARGO_HOME/config` (`~/.cargo/config` by default) the following lines:
 
 ```toml
 [source.local]

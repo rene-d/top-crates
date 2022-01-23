@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from collections import defaultdict
 import re
-import subprocess
+import subprocess  # nosec
 import argparse
 import shutil
 import requests
@@ -53,7 +53,7 @@ class SemVer:
         parts = match.groups()
         self.parts = (int(parts[0]), int(parts[1]), int(parts[2]), parts[3], parts[4])
 
-        assert str(self) == version
+        assert str(self) == version  # nosec
 
     def __str__(self):
         s = ".".join(map(str, self.parts[:3]))
@@ -115,8 +115,10 @@ class SemVer:
 
         return rccmp
 
-    # https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#caret-requirements
     def _caret_requirement(pattern):
+        """
+        Match a [caret-requirement](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#caret-requirements).
+        """
         a = pattern[1:].split(".")
         length = len(a)
 
@@ -139,21 +141,12 @@ class SemVer:
         else:
             max_pattern = f"<{int(a[0]) + 1}.0.0"
 
-        # if a[1] == "0":
-        #     if length == 1:
-        #         max_pattern = "0.*"
-        #     elif length == 2:
-        #         max_pattern = f"0.{a[1]}.*"
-        #     else:
-        #         max_pattern = f"0.{a[1]}.{int(a[2])}-*"
-        #         assert False, "not implemented"
-        # else:
-        #     max_pattern = f"{a[0]}.*"
-
         return min_pattern, max_pattern
 
-    # https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#tilde-requirements
     def _tilde_requirement(pattern):
+        """
+        Match a [tilde requirement](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#tilde-requirements).
+        """
         a = pattern[1:].split(".")
         length = len(a)
 
@@ -171,19 +164,21 @@ class SemVer:
         return min_pattern, max_pattern
 
     def match(self, pattern):
-        """"""
+        """
+        Test if semver matches a pattern.
+        """
 
-        def expr(pattern, strict=False):
+        def _expr(pattern, strict=False):
 
             pattern = pattern.strip()
 
             if pattern[0] == "^":
                 p1, p2 = SemVer._caret_requirement(pattern)
-                return expr(p1) and expr(p2, True)
+                return _expr(p1) and _expr(p2, True)
 
             if pattern[0] == "~":
                 p1, p2 = SemVer._tilde_requirement(pattern)
-                return expr(p1) and expr(p2, True)
+                return _expr(p1) and _expr(p2, True)
 
             try:
                 if pattern == "*":
@@ -191,7 +186,7 @@ class SemVer:
 
                 if pattern[0] == "=":
                     p = pattern[1:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
+                    assert p[0].isdigit() and p.find("*") == -1  # nosec
 
                     if p != self.raw_version:
                         b = p.split(".")
@@ -207,7 +202,7 @@ class SemVer:
 
                 if pattern[0:2] == ">=":
                     p = pattern[2:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
+                    assert p[0].isdigit() and p.find("*") == -1  # nosec
                     if re.match(r"^\d+$", p):
                         p += ".0.0"
                     elif re.match(r"^\d+\.\d+$", p):
@@ -216,7 +211,7 @@ class SemVer:
 
                 if pattern[0:2] == "<=":
                     p = pattern[2:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
+                    assert p[0].isdigit() and p.find("*") == -1  # nosec
                     if re.match(r"^\d+$", p):
                         p += ".9999999.9999999"
                     elif re.match(r"^\d+\.\d+$", p):
@@ -225,7 +220,7 @@ class SemVer:
 
                 if pattern[0:1] == ">":
                     p = pattern[1:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
+                    assert p[0].isdigit() and p.find("*") == -1  # nosec
                     if re.match(r"^\d+$", p):
                         p += ".0.0"
                     elif re.match(r"^\d+\.\d+$", p):
@@ -234,28 +229,14 @@ class SemVer:
 
                 if pattern[0:1] == "<":
                     p = pattern[1:].lstrip()
-                    assert p[0].isdigit() and p.find("*") == -1
+                    assert p[0].isdigit() and p.find("*") == -1  # nosec
                     if re.match(r"^\d+$", p):
                         p += ".9999999.9999999"
                     elif re.match(r"^\d+\.\d+$", p):
                         p += ".9999999"
                     return self.compare(p, strict) < 0
 
-                # if pattern[0] == "^":
-                #     p = pattern[1:].lstrip()
-                #     assert p[0].isdigit() and p.find("*") == -1
-                #     a = p.split(".")
-                #     b = self.raw_version.split(".")
-                #     return a == b[: len(a)]
-
-                # if pattern[0] == "~":
-                #     p = pattern[1:].lstrip()
-                #     assert p[0].isdigit() and p.find("*") == -1
-                #     a = p.split(".")
-                #     b = self.raw_version.split(".")
-                #     return a == b[: len(a)]
-
-                assert pattern[0].isdigit()
+                assert pattern[0].isdigit()  # nosec
 
                 if pattern.find("*") != -1:
                     p = re.escape(pattern)
@@ -269,11 +250,13 @@ class SemVer:
                 print(f'ERROR semver_match("{pattern}", "{self}")')
                 raise e
 
-        return all(expr(p) for p in pattern.split(","))
+        return all(_expr(p) for p in pattern.split(","))
 
     @staticmethod
     def find_matching(pattern, versions):
-
+        """
+        Find the match version for a pattern.
+        """
         try:
             m = None
             m_yanked = None
@@ -312,20 +295,15 @@ class SemVer:
             raise e
 
 
-def prefix_name(name):
-    l = len(name)
-    if l == 1:
-        return f"1/{name}"
-    elif l == 2:
-        return f"2/{name}"
-    elif l == 3:
-        return f"3/{name[0]}/{name}"
-    else:
-        return f"{name[:2]}/{name[2:4]}/{name}"
-
-
 class TopCrates:
+    """
+    Class to download crates and make a local Rust registry.
+    """
+
     def __init__(self):
+        """
+        Constructor.
+        """
         self.verbose = False
         self.crates = defaultdict(set)
         self.selected_crates = None
@@ -343,22 +321,38 @@ class TopCrates:
         ]
 
     def load(self, filename):
+        """
+        Load crates from a JSON file.
+        """
         data = json.load(open(filename))
         for k, v in data.items():
             for version in v:
                 self.add(k, version)
 
     def save(self, filename):
+        """
+        Save the crates list to a JSON file.
+        """
         data = dict((k, list(v)) for k, v in self.crates.items())
         json.dump(data, open(filename, "w"), indent=2)
 
     def add(self, name, version="latest"):
+        """
+        Add a crate version to the list of crates.
+        """
         if any(e.match(name) for e in self.exclusions):
             return
         self.crates[name].add(version)
 
-    def download(self):
-        def get_top(count, category=""):
+    def top_crates(self):
+        """
+        Download the top crates from the [Rust registry](https://crates.io/).
+        """
+
+        def _get_top(count, category=""):
+            """
+            Use the crates.io API to fetch crates per download count.
+            """
             if category:
                 category = f"&category={category}"
 
@@ -380,13 +374,16 @@ class TopCrates:
                 page += 1
                 count -= per_page
 
-        get_top(self.conf_top_crates)
+        _get_top(self.conf_top_crates)
 
         for category in self.conf_categories:
             for name, count in category.items():
-                get_top(count, name)
+                _get_top(count, name)
 
     def cookbook(self):
+        """
+        Add crates from the [Rust Cookbook](https://rust-lang-nursery.github.io/rust-cookbook/intro.html).
+        """
         if self.conf_cookbook:
             r = requests.get("https://raw.githubusercontent.com/rust-lang-nursery/rust-cookbook/master/Cargo.toml")
             d = tomli.loads(r.text)
@@ -394,16 +391,37 @@ class TopCrates:
                 self.add(name)
 
     def curated(self):
+        """
+        Add curated crates and commands.
+        """
         for k in self.conf_additions:
             self.add(k)
         for k in self.conf_commands:
             self.add(k)
 
-    def resolve_deps(self, max_iterations=20000):
+    @staticmethod
+    def _prefix_name(name):
+        """
+        Make the path a crate to conform [registies](https://doc.rust-lang.org/cargo/reference/registries.html) rules.
+        """
+        l = len(name)
+        if l == 1:
+            return f"1/{name}"
+        elif l == 2:
+            return f"2/{name}"
+        elif l == 3:
+            return f"3/{name[0]}/{name}"
+        else:
+            return f"{name[:2]}/{name[2:4]}/{name}"
 
+    def resolve_deps(self, max_iterations=20000):
+        """
+        Resolve dependencies of all crates, like Cargo does.
+        """
         print(f"Analyze {len(self.crates)} crates")
 
-        seen = set()
+        seen = set()  # memoize already resolved crates
+
         n = 0
         while len(self.crates) > 0:
 
@@ -424,10 +442,11 @@ class TopCrates:
             except:
                 print(f"{n:03d} {crate} {versions}")
                 raise
+
             if len(versions) == 0:
                 continue
 
-            info_file = Path("crates.io-index") / prefix_name(crate)
+            info_file = Path("crates.io-index") / TopCrates._prefix_name(crate)
             if not info_file.is_file():
                 continue
 
@@ -466,14 +485,14 @@ class TopCrates:
                     if self.verbose:
                         print(f"      found: {name} {req}  {dep['kind']} {dep['optional'] and 'optional' or ''}")
 
-                    assert dep["kind"] in ["normal", "build", "dev"]
+                    assert dep["kind"] in ["normal", "build", "dev"]  # nosec
 
                     if name not in seen:
                         self.add(name, req)
                         if self.verbose:
                             print("      adding", name, req)
                     else:
-                        assert False
+                        assert False  # nosec
 
             if self.verbose:
                 print()
@@ -488,7 +507,9 @@ class TopCrates:
         json.dump(self.selected_crates, open("selected_crates.json", "w"), indent=2)
 
     def make_index(self, index_dir="local-registry/index"):
-
+        """
+        Build the crates index with the required arborescence: <prefix>/<crate>. Each line of a crate file describes a version.
+        """
         if self.selected_crates is None:
             self.selected_crates = json.load(open("selected_crates.json"))
 
@@ -500,7 +521,7 @@ class TopCrates:
 
         for name, versions in self.selected_crates.items():
 
-            data = Path(f"crates.io-index/{prefix_name(name)}")
+            data = Path(f"crates.io-index/{TopCrates._prefix_name(name)}")
 
             versions = set(versions)
             new_data = []
@@ -509,13 +530,15 @@ class TopCrates:
                 if v["vers"] in versions:
                     new_data.append(line)
 
-            f = Path(index_dir) / prefix_name(name)
+            f = Path(index_dir) / TopCrates._prefix_name(name)
             f.parent.mkdir(exist_ok=True, parents=True)
             new_data.append("")
             f.write_text("\n".join(new_data))
 
     def download_crates(self, crates_dir="local-registry", purge=False):
-
+        """
+        Download crates to the local registry, in a flat directory structure.
+        """
         crates_dir = Path(crates_dir)
         crates_dir.mkdir(exist_ok=True, parents=True)
 
@@ -532,9 +555,14 @@ class TopCrates:
 
         # existing now contains no more listed crates
         print(f"{len(existing)} unused crate{'' if len(existing) < 1 else 's'}")
-        if purge:
-            for f in existing:
+        for f in existing:
+            if purge:
                 (crates_dir / f).unlink()
+                if self.verbose:
+                    print(f"deleted: {f}")
+            else:
+                if self.verbose:
+                    print(f"unused: {f}")
 
         if len(downloads) == 0:
             print("No new crates to download")
@@ -552,14 +580,21 @@ class TopCrates:
 
         print(f"Downloaded {total} new crate{'' if total < 2 else 's'}", " " * 80)
 
+    @staticmethod
     def _init_mp_session(counter, total):
-        """Initialize a multiprocessing session."""
+        """
+        Initialize a multiprocessing session.
+        Set up a new Requests session for each process and set the shared counter.
+        """
         get_context().session = requests.Session()
         get_context().counter = counter
         get_context().total = total
 
+    @staticmethod
     def _download_crate(name_version, crates_dir):
-
+        """
+        Download a crate in a multiprocessing session. Requests session is reused and shared counter is updated.
+        """
         name, version = name_version
         context = get_context()
         session = context.session
@@ -581,7 +616,18 @@ class TopCrates:
             os.utime(dest_file, ns=(mtime, mtime))
 
 
+def git_cmd(cmd, *args, **kwargs):
+    """
+    Run a git command.
+    """
+    return subprocess.run(["git"] + cmd, *args, **kwargs)  # nosec
+
+
 def main():
+    """
+    Main function.
+    Parse command line arguments and call the appropriate function.
+    """
     parser = argparse.ArgumentParser(description="Create an index for the top crates")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -607,34 +653,33 @@ def main():
 
     if args.download or not Path("crates.json").is_file():
         print("Build the top crates list")
-        a.download()
+        a.top_crates()
         a.cookbook()
         a.curated()
         a.save("crates.json")
-
     else:
         a.load("crates.json")
 
     if args.update:
         print("Update main index")
-        subprocess.run(["git", "fetch", "--all"], cwd="crates.io-index")
-        subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="crates.io-index")
+        git_cmd(["fetch", "--all"], cwd="crates.io-index")
+        git_cmd(["reset", "--hard", "origin/master"], cwd="crates.io-index")
 
     a.resolve_deps()
 
     if args.git_registry:
         # not well supported, should git clone/git init before
         if args.commit:
-            subprocess.run(["git", "clean", "-ffdx"], cwd="top-crates-index")
-            subprocess.run(["git", "reset", "--hard", "origin/master"], cwd="top-crates-index")
+            git_cmd(["clean", "-ffdx"], cwd="top-crates-index")
+            git_cmd(["reset", "--hard", "origin/master"], cwd="top-crates-index")
 
         a.make_index("top-crates-index")
-        subprocess.run(["git", "status", "-s"], cwd="top-crates-index")
+        git_cmd(["status", "-s"], cwd="top-crates-index")
 
         if args.commit:
-            subprocess.run(["git", "add", "."], cwd="top-crates-index")
-            subprocess.run(["git", "commit", "-m", "Update top crates index"], cwd="top-crates-index")
-            subprocess.run(["git", "push", "origin", "master"], cwd="top-crates-index")
+            git_cmd(["add", "."], cwd="top-crates-index")
+            git_cmd(["commit", "-m", "Update top crates index"], cwd="top-crates-index")
+            git_cmd(["push", "origin", "master"], cwd="top-crates-index")
 
     else:
         a.make_index()
