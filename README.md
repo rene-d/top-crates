@@ -15,7 +15,7 @@ This local registry can be added to a Docker image to create an isolated develop
 ## Installation
 
 ```shell
-pip3 install tomli
+pip3 install tomli python-dateutil
 
 git clone --recursive https://github.com/rene-d/top-crates
 ```
