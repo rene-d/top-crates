@@ -63,6 +63,11 @@ class SemVer:
             s += f"+{self.parts[4]}"
         return s
 
+    @property
+    def prerelease(self):
+        """Return if version is a prelease tag."""
+        return self.parts[3] is not None
+
     def compare(self, other, strict=False):
         """Compare two versions strings."""
 
@@ -286,7 +291,7 @@ class SemVer:
 
             if not m:
                 m = (None, last)
-                print("WARNING: no matching version found, using latest version", m[1]["name"], pattern)
+                print(f"WARNING: no matching version found, using latest version {m[1]['name']} {pattern}")
 
             return m[1]
 
@@ -427,7 +432,8 @@ class TopCrates:
 
             n += 1
             if n > max_iterations:
-                print("too many iterations")
+                if max_iterations != 1:
+                    print("too many iterations")
                 break
 
             crate, versions = self.crates.popitem()
@@ -453,14 +459,22 @@ class TopCrates:
             info = {}
             lines = info_file.read_text().splitlines()
             latest = None
+            latest_stable = None
             for line in lines:
                 data = json.loads(line)
                 latest = data["vers"]
                 info[latest] = data
+                if not SemVer(latest).prerelease:
+                    latest_stable = latest
 
             if latest and "latest" in versions:
                 versions.remove("latest")
-                versions.add(latest)
+                if latest_stable:
+                    # add the latest stable version
+                    versions.add(latest_stable)
+                else:
+                    # if no stable version, add the latest prerelease
+                    versions.add(latest)
 
             for vers in versions:
 
@@ -490,7 +504,7 @@ class TopCrates:
                     if name not in seen:
                         self.add(name, req)
                         if self.verbose:
-                            print("      adding", name, req)
+                            print(f"      adding f{name} {req}")
                     else:
                         assert False  # nosec
 
@@ -637,7 +651,7 @@ def main():
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
     parser.add_argument("-g", "--git-registry", action="store_true", help="Make a Git registry")
 
-    parser.add_argument("-t", help="test")
+    parser.add_argument("-t", "--test", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
@@ -645,8 +659,12 @@ def main():
 
     a.verbose = args.verbose
 
-    if args.t:
-        name, version = args.t.split(" ", 1)
+    if args.test:
+        a.verbose = True
+        crate = args.test.split(" ", 1)
+        if len(crate) == 1:
+            crate.append("latest")
+        name, version = crate
         a.add(name, version)
         a.resolve_deps(1)
         exit()
