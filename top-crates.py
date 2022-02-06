@@ -629,6 +629,48 @@ class TopCrates:
             mtime = round(url_date.timestamp() * 1_000_000_000)
             os.utime(dest_file, ns=(mtime, mtime))
 
+    def audit(self):
+        if self.selected_crates is None:
+            self.selected_crates = json.load(open("selected_crates.json"))
+
+        for name, versions in self.selected_crates.items():
+            d = Path("advisory-db") / "crates" / name
+            if d.is_dir():
+
+                ko = {}
+
+                for md in d.glob("*.md"):
+                    m = re.search("```toml\n(.+?)\n```", md.read_text(), re.DOTALL)
+                    m = tomli.loads(m.group(1))
+
+                    v = m["versions"]
+                    unaffected = v.get("unaffected", [])
+                    patched = v.get("patched", [])
+
+                    for version in versions:
+                        semver = SemVer(version)
+                        is_unaffected = any(semver.match(v) for v in unaffected)
+                        is_patched = any(semver.match(v) for v in patched)
+                        if not is_unaffected and not is_patched:
+
+                            if m["advisory"]["id"] in ko:
+                                ko[m["advisory"]["id"]]["versions"].append(version)
+                            else:
+                                url = f"https://github.com/rustsec/advisory-db/blob/main/crates/{name}/{md.name}"
+                                ko[m["advisory"]["id"]] = {
+                                    "id": [m["advisory"]["id"]] + m["advisory"].get("aliases", []),
+                                    "versions": [version],
+                                    "url": url,
+                                    "v": v,
+                                }
+
+                if len(ko) != 0:
+                    print(f"{name}")
+                    for pb in ko.values():
+                        print(f"   versions: {' '.join(pb['versions'])}")
+                        print(f"   id:       {' '.join(pb['id'])}  {pb['url']}")
+                        print(f"      safe: {pb['v']}")
+
 
 def git_cmd(cmd, *args, **kwargs):
     """
@@ -650,6 +692,7 @@ def main():
     parser.add_argument("-p", "--purge", action="store_true", help="Remove encumbered crates")
     parser.add_argument("-c", "--commit", action="store_true", help="Commit the new index")
     parser.add_argument("-g", "--git-registry", action="store_true", help="Make a Git registry")
+    parser.add_argument("-a", "--audit", action="store_true", help="Audit")
 
     parser.add_argument("-t", "--test", help=argparse.SUPPRESS)
 
@@ -667,6 +710,19 @@ def main():
         name, version = crate
         a.add(name, version)
         a.resolve_deps(1)
+        exit()
+
+    if args.audit:
+        if not Path("advisory-db").is_dir():
+            print("Downloading advisory-db")
+            git_cmd(["clone", "-b", "main", "https://github.com/rustsec/advisory-db"])
+        else:
+            # git_cmd(["fetch", "--all"], cwd="advisory-db")
+            # git_cmd(["reset", "--hard", "origin/master"], cwd="advisory-db")
+            pass
+
+        a.audit()
+
         exit()
 
     if args.download or not Path("crates.json").is_file():

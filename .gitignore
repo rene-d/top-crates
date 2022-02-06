@@ -4,3 +4,4 @@ crate-information.json
 crates.json
 selected_crates.json
 local-registry/
+advisory-db/

@@ -45,25 +45,24 @@ exclusions = [
 ]
 
 commands = [
-    "bat",
-    "panamax",
-    "lsd",
-    "ripgrep",
-    "procs",
-    "dua-cli",
-    "bottom",
-    "dust",
-    "kmon",
+    "ripgrep", # https://github.com/BurntSushi/ripgrep
+    "bat",     # https://github.com/sharkdp/bat
+    "lsd",     # https://github.com/Peltoche/lsd
+    "bottom",  # https://github.com/ClementTsang/bottom
+    "procs",   # https://github.com/dalance/procs
+    "dua-cli", # https://github.com/Byron/dua-cli
 
     # https://crates.io/keywords/cargo-subcommand
-    "cargo",
     "cargo-edit",
     "cargo-local-registry",
     "cargo-valgrind",
-    "cargo-tarpaulin",
+    # "cargo-tarpaulin",    # code coverage, only on Linux x86_64
+    # "flamegraph",         # https://github.com/flamegraph-rs/flamegraph
+    # "cargo-audit",        # https://github.com/rustsec/rustsec
 ]
 
 additions = [
+    "rayon",
     "globset",
     "flatbuffers",
     "protobuf",
@@ -78,15 +77,9 @@ additions = [
     "tui",
     "redis",
     "rusqlite",
-
     "xml-rs",
     "heck",
-
-    "globset",
-    "cargo",
     "reqwest",
-    "indicatif",
-    "structopt",
     "toml",
     "serde",
     "console",
