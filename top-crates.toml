@@ -53,12 +53,12 @@ commands = [
     "dua-cli", # https://github.com/Byron/dua-cli
 
     # https://crates.io/keywords/cargo-subcommand
-    "cargo-edit",
-    "cargo-local-registry",
-    "cargo-valgrind",
-    # "cargo-tarpaulin",    # code coverage, only on Linux x86_64
+    "cargo-edit",           # https://github.com/killercup/cargo-edit
+    "cargo-local-registry", # https://crates.io/crates/cargo-local-registry
+    "cargo-valgrind",       # https://github.com/jfrimmel/cargo-valgrind
+    "cargo-audit",          # https://github.com/rustsec/rustsec
+    # "cargo-tarpaulin",    # [code coverage, only on Linux x86_64](https://crates.io/crates/cargo-tarpaulin)
     # "flamegraph",         # https://github.com/flamegraph-rs/flamegraph
-    # "cargo-audit",        # https://github.com/rustsec/rustsec
 ]
 
 additions = [

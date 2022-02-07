@@ -669,7 +669,7 @@ class TopCrates:
                     for pb in ko.values():
                         print(f"   versions: {' '.join(pb['versions'])}")
                         print(f"   id:       {' '.join(pb['id'])}  {pb['url']}")
-                        print(f"      safe: {pb['v']}")
+                        print(f"   safe: {pb['v']}")
 
 
 def git_cmd(cmd, *args, **kwargs):

@@ -6,6 +6,9 @@ FROM rust:latest
 
 RUN rustup component add rustfmt clippy rls rust-analysis rust-src rust-docs
 
+# https://crates.io/crates/cargo-audit
+RUN git clone https://github.com/rustsec/advisory-db /usr/local/cargo/advisory-db
+
 # add your local registry
 COPY --from=crates /local-registry/ /local-registry/
 
