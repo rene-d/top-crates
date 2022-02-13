@@ -45,14 +45,16 @@ exclusions = [
 ]
 
 commands = [
-    "ripgrep", # https://github.com/BurntSushi/ripgrep
-    "bat",     # https://github.com/sharkdp/bat
-    "lsd",     # https://github.com/Peltoche/lsd
-    "bottom",  # https://github.com/ClementTsang/bottom
-    "procs",   # https://github.com/dalance/procs
-    "dua-cli", # https://github.com/Byron/dua-cli
+    "watchexec-cli", # https://github.com/watchexec/watchexec
+    "ripgrep",       # https://github.com/BurntSushi/ripgrep
+    "bat",           # https://github.com/sharkdp/bat
+    "lsd",           # https://github.com/Peltoche/lsd
+    "bottom",        # https://github.com/ClementTsang/bottom
+    "procs",         # https://github.com/dalance/procs
+    "dua-cli",       # https://github.com/Byron/dua-cli
 
     # https://crates.io/keywords/cargo-subcommand
+    "cargo-watch",          # cargo install cargo-watch
     "cargo-edit",           # https://github.com/killercup/cargo-edit
     "cargo-local-registry", # https://crates.io/crates/cargo-local-registry
     "cargo-valgrind",       # https://github.com/jfrimmel/cargo-valgrind
