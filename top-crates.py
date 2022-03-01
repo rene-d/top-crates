@@ -124,7 +124,8 @@ class SemVer:
         """
         Match a [caret-requirement](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#caret-requirements).
         """
-        a = pattern[1:].split(".")
+        # a = pattern[1:].split(".")
+        a = re.split(r"\W+", pattern[1:])
         length = len(a)
 
         min_pattern = f">={pattern[1:]}"
@@ -297,6 +298,7 @@ class SemVer:
 
         except Exception as e:
             print(f'ERROR find_matching("{pattern}", {versions.keys()})')
+            print(versions)
             raise e
 
 
@@ -760,5 +762,23 @@ def main():
         a.download_crates(purge=args.purge)
 
 
+def tests():
+    """
+    Some unit tests.
+    """
+    assert (
+        SemVer.find_matching(
+            "^0.0.3-beta",
+            {
+                "0.0.1-beta": {"name": "test", "yanked": False, "res": 1},
+                "0.0.2-beta": {"name": "test", "yanked": False, "res": 2},
+                "0.0.3-beta": {"name": "test", "yanked": False, "res": 3},
+            },
+        )["res"]
+        == 3
+    )
+
+
 if __name__ == "__main__":
+    tests()
     main()
