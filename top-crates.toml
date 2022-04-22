@@ -64,6 +64,9 @@ commands = [
 ]
 
 additions = [
+    "tonic",
+    "grpc",
+    "rasn",
     "rayon",
     "globset",
     "flatbuffers",
