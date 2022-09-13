@@ -109,4 +109,6 @@ additions = [
 
     "egui",
     "imgui",
+    
+    "wasm-pack",
 ]
