@@ -2,7 +2,7 @@ FROM scratch AS crates
 
 COPY local-registry/ /local-registry/
 
-FROM rust:1.63.0
+FROM rust:1.65.0
 
 RUN rustup component add rustfmt clippy rls rust-analysis rust-src rust-docs
 
